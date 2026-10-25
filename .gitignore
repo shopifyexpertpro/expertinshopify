@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+server/data.sqlite*
+public/uploads/*
+!public/uploads/.gitkeep
+.DS_Store
+
+server/private-attachments/
+server/*.sqlite*
+.env.production

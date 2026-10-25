@@ -1,0 +1,52 @@
+# Run from project root: docker compose -f deploy/compose.yml --env-file .env up -d --build
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      TRUST_PROXY: "true"
+      APP_ORIGIN: https://${DOMAIN:?Set DOMAIN in .env}
+      SITE_URL: https://${DOMAIN:?Set DOMAIN in .env}
+      DATA_DIR: /app/storage
+      UPLOADS_DIR: /app/storage/uploads
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      PAYPAL_ENV: ${PAYPAL_ENV:-sandbox}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      ENABLE_CLIENT_UPLOADS: "false"
+      CLAMAV_SCAN: "false"
+    volumes:
+      - studio_data:/app/storage
+    expose:
+      - "4000"
+    networks:
+      - app_internal
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - app_internal
+volumes:
+  studio_data:
+  caddy_data:
+  caddy_config:
+networks:
+  app_internal:

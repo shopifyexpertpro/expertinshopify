@@ -1,0 +1,74 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import {spawn} from 'node:child_process';
+import {fileURLToPath} from 'node:url';
+
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const temp=fs.mkdtempSync(path.join(os.tmpdir(),'expert-chat-tests-'));
+const port=33000+Math.floor(Math.random()*20000);
+const base=`http://127.0.0.1:${port}`;
+const adminPassword='SafeAdminTestingPassword';
+const server=spawn(process.execPath,['server/index.mjs'],{cwd:root,env:{...process.env,PORT:String(port),DATA_DIR:temp,UPLOADS_DIR:path.join(temp,'uploads'),ADMIN_PASSWORD:adminPassword,NODE_ENV:'development'},stdio:'ignore'});
+const req=async (route,method='GET',body,cookie='')=>{
+  const response=await fetch(base+'/api'+route,{method,headers:{'content-type':'application/json',...(cookie?{cookie}:{})},...(body!==undefined?{body:JSON.stringify(body)}:{})});
+  const payload=await response.json();return {status:response.status,data:payload,cookie:response.headers.get('set-cookie')?.split(';')[0]||''};
+};
+try {
+  let ready=false;for(let i=0;i<60;i++){try{await req('/public');ready=true;break}catch{await new Promise(r=>setTimeout(r,100))}}
+  assert.ok(ready,'Server did not start');
+  assert.equal((await req('/client/me')).data.client,null);
+  const a=await req('/client/register','POST',{name:'Alice Client',email:'Alice@example.com',password:'Safe1234567890'});
+  assert.equal(a.status,201);let alice=a.cookie;assert.ok(alice.startsWith('studio_client='));
+  const b=await req('/client/register','POST',{name:'Bob Client',email:'bob@example.com',password:'Safe1234567890'});
+  assert.equal(b.status,201);const bob=b.cookie;
+  assert.equal((await req('/client/me','GET',undefined,alice)).data.client.email,'alice@example.com');
+  assert.equal((await req('/client/register','POST',{name:'Other',email:'ALICE@example.com',password:'Safe1234567890'})).status,409);
+  const aBad=await req('/client/login','POST',{email:'Alice@example.com',password:'wrongpassword'});assert.equal(aBad.status,401);
+  const admin=await req('/admin/login','POST',{password:adminPassword});assert.equal(admin.status,200);const adminCookie=admin.cookie;
+  const service=(await req('/public')).data.services[0];
+  const order=await req('/orders','POST',{serviceId:service.id,name:'Alice Client',email:'alice@example.com',method:'bank'},alice);
+  assert.equal(order.status,201);
+  assert.equal((await req('/client/orders','GET',undefined,alice)).data.orders[0].id,order.data.id);
+  assert.equal((await req('/client/orders','GET',undefined,bob)).data.orders.length,0);
+  const thread=await req('/client/conversations','POST',{subject:'Project brief',orderId:order.data.id},alice);
+  assert.equal(thread.status,201);
+  const id=thread.data.id;
+  assert.equal((await req('/client/conversations/'+id+'/messages','POST',{body:'Can we use my brand colors?'},alice)).status,201);
+  assert.equal((await req('/client/conversations/'+id+'/messages','GET',undefined,bob)).status,404,'Bob cannot read Alice messages');
+  assert.equal((await req('/client/conversations/'+id+'/messages','POST',{body:'Unauthorized'},bob)).status,404);
+  assert.equal((await req('/client/conversations','POST',{orderId:order.data.id,subject:'Stolen order'},bob)).status,404);
+  const inbox=await req('/admin/conversations','GET',undefined,adminCookie);
+  assert.equal(inbox.data.conversations.length,1);
+  assert.equal(inbox.data.conversations[0].unread_count,1);
+  const read=await req('/admin/conversations/'+id+'/messages','GET',undefined,adminCookie);
+  assert.equal(read.status,200);assert.equal(read.data.messages[0].body,'Can we use my brand colors?');
+  assert.equal((await req('/admin/conversations','GET',undefined,adminCookie)).data.conversations[0].unread_count,0);
+  assert.equal((await req('/admin/conversations/'+id+'/messages','POST',{body:'Yes, send us your palette.'},adminCookie)).status,201);
+  assert.equal((await req('/client/conversations','GET',undefined,alice)).data.conversations[0].unread_count,1);
+  const aliceRead=await req('/client/conversations/'+id+'/messages','GET',undefined,alice);
+  assert.equal(aliceRead.data.messages.length,2);
+  assert.equal(aliceRead.data.messages[1].body,'Yes, send us your palette.');
+  assert.equal((await req('/client/conversations','GET',undefined,alice)).data.conversations[0].unread_count,0);
+  const adminStarted=await req('/admin/conversations','POST',{subject:'Welcome!',clientId:b.data.client.id},adminCookie);
+  assert.equal(adminStarted.status,201);
+  assert.equal((await req('/client/conversations','GET',undefined,bob)).data.conversations.length,1);
+  assert.equal((await req('/client/conversations','GET',undefined,alice)).data.conversations.length,1);
+  assert.equal((await req('/client/logout','POST',{},alice)).status,200);
+  assert.equal((await req('/client/orders','GET',undefined,alice)).status,401);
+  const login=await req('/client/login','POST',{email:'Alice@example.com',password:'Safe1234567890'});
+  assert.equal(login.status,200);alice=login.cookie;
+  assert.equal((await req('/client/conversations','GET',undefined,alice)).data.conversations.length,1);
+  // Validate SSE makes the stream available to authenticated users and denies guests.
+  assert.equal((await req('/client/events')).status,401);
+  const controller=new AbortController();
+  const streamResponse=await fetch(base+'/api/client/events',{headers:{cookie:alice},signal:controller.signal});
+  assert.equal(streamResponse.status,200);assert.ok(streamResponse.headers.get('content-type').includes('text/event-stream'));
+  const reader=streamResponse.body.getReader();const first=await reader.read();assert.ok(new TextDecoder().decode(first.value).includes('event: ready'));
+  assert.equal((await req('/admin/conversations/'+id+'/messages','POST',{body:'Live notification test'},adminCookie)).status,201);
+  const notification=await Promise.race([reader.read(),new Promise((_,reject)=>setTimeout(()=>reject(Error('SSE notification timeout')),1800))]);
+  assert.ok(new TextDecoder().decode(notification.value).includes('event: inbox'),'New messages are delivered to the connected client');
+  controller.abort();
+  console.log('PASS: client register/login/logout, private order ownership, secure inbox, admin replies, unread receipts, SSE events.');
+}catch(e){console.error('FAIL:',e);process.exitCode=1}finally{server.kill('SIGTERM');fs.rmSync(temp,{recursive:true,force:true})}
