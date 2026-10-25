@@ -4,3 +4,7 @@ dist
 .git
 server/*.sqlite*
 public/uploads/*
+server/private-attachments
+tests
+deploy
+*.md

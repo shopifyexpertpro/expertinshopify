@@ -1,0 +1,30 @@
+# Render Blueprint: Dashboard → New → Blueprint → pick this repo.
+# The persistent disk keeps the SQLite database and uploaded images across deploys (requires a paid instance; the free plan has no disks).
+services:
+  - type: web
+    name: expertinshopify
+    runtime: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/public
+    disk:
+      name: storage
+      mountPath: /app/storage
+      sizeGB: 1
+    envVars:
+      - key: TRUST_PROXY
+        value: "true"
+      - key: PAYPAL_ENV
+        value: sandbox
+      # First deploy only: the admin password (12+ characters). Change it later in Admin → Security.
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM
+        sync: false
+      # With a custom domain, also add APP_ORIGIN and SITE_URL (e.g. https://expertinshopify.com) in the dashboard.

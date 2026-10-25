@@ -18,7 +18,7 @@ if (fs.existsSync(envFile)) for (const row of fs.readFileSync(envFile, 'utf8').s
 }
 const PORT = Number(process.env.PORT || 4000);
 const SECURE = process.env.NODE_ENV === 'production';
-const appOrigin = (process.env.APP_ORIGIN || (SECURE ? '' : 'http://localhost:5173')).replace(/\/$/, '');
+const appOrigin = (process.env.APP_ORIGIN || process.env.RENDER_EXTERNAL_URL || (SECURE ? '' : 'http://localhost:5173')).replace(/\/$/, '');
 const dataDir = path.resolve(process.env.DATA_DIR || here);
 const uploadsDir = path.resolve(process.env.UPLOADS_DIR || path.join(root, 'public', 'uploads'));
 const privateDir = path.join(dataDir, 'private-attachments');
