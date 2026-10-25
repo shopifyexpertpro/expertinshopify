@@ -94,3 +94,6 @@ a.hero-proof{color:inherit}.hero-stars{color:#f5c84b}
 .summary-line{display:flex;justify-content:space-between;font-size:13px;color:#66736c;margin-top:10px}.summary-line.discount{color:#007b5d;font-weight:700}
 .saved-note{display:block;color:#007b5d;margin-top:4px}
 @media(max-width:650px){.back-to-top{left:14px;bottom:15px}}
+.password-wrap{position:relative;display:block;width:100%}.password-wrap input{width:100%;padding-right:46px!important}
+.password-toggle{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:#7f8b84;cursor:pointer}
+.password-toggle:hover{color:#008d68;background:#00a77b14}.password-toggle:focus-visible{outline:2px solid #13ab7b;outline-offset:1px}
