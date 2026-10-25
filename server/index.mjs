@@ -130,6 +130,15 @@ if (!has('admin')) {
   db.prepare('INSERT INTO admin(id,salt,password_hash) VALUES(1,?,?)').run(salt, crypto.scryptSync(pw,salt,64).toString('hex'));
   console.log('\n'+ '='.repeat(55) +'\nADMIN LOGIN — first run ONLY\nPassword: ' + pw + '\nStore this password securely. Change by updating the admin table or resetting the database before launch.\n' + '='.repeat(55)+'\n');
 }
+// One-time production admin reset shipped through git (only a scrypt hash is stored; the password itself is never committed).
+// Runs once per database, so later changes made in Admin → Security are kept.
+const adminReset={id:'2026-10-26',salt:'ab56c3c965f5803a113aace4ac283122',hash:'231ddcb4cb0390ca255010e9ce8b5540e725c995271cf3b48adb8912d4432f57a97a014697a3ffebb01302cab735c3bfdf5abdce9b4b3d8e7f2ff75068e1d0bc'};
+if (SECURE && getSetting('adminResetApplied').id!==adminReset.id) {
+  db.prepare('UPDATE admin SET salt=?,password_hash=? WHERE id=1').run(adminReset.salt, adminReset.hash);
+  db.prepare('DELETE FROM sessions').run();
+  setSetting('adminResetApplied',{id:adminReset.id});
+  console.log('Admin password reset '+adminReset.id+' applied.');
+}
 // Recovery for hosted installs without shell access: set ADMIN_RESET_PASSWORD, restart, sign in, then delete the variable.
 if (process.env.ADMIN_RESET_PASSWORD) {
   const pw = process.env.ADMIN_RESET_PASSWORD;
