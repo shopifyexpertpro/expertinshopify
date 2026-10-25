@@ -130,6 +130,15 @@ if (!has('admin')) {
   db.prepare('INSERT INTO admin(id,salt,password_hash) VALUES(1,?,?)').run(salt, crypto.scryptSync(pw,salt,64).toString('hex'));
   console.log('\n'+ '='.repeat(55) +'\nADMIN LOGIN — first run ONLY\nPassword: ' + pw + '\nStore this password securely. Change by updating the admin table or resetting the database before launch.\n' + '='.repeat(55)+'\n');
 }
+// Recovery for hosted installs without shell access: set ADMIN_RESET_PASSWORD, restart, sign in, then delete the variable.
+if (process.env.ADMIN_RESET_PASSWORD) {
+  const pw = process.env.ADMIN_RESET_PASSWORD;
+  if (pw.length < 12) throw new Error('ADMIN_RESET_PASSWORD must contain at least 12 characters.');
+  const salt = crypto.randomBytes(16).toString('hex');
+  db.prepare('UPDATE admin SET salt=?,password_hash=? WHERE id=1').run(salt, crypto.scryptSync(pw,salt,64).toString('hex'));
+  db.prepare('DELETE FROM sessions').run();
+  console.log('Admin password was reset from ADMIN_RESET_PASSWORD. Remove that variable now, or every restart will reset it again.');
+}
 
 const selectServices = () => db.prepare('SELECT * FROM services ORDER BY sort, created_at').all().map(s=>({...s,features: JSON.parse(s.features), featured:!!s.featured, active:!!s.active}));
 const selectProjects = () => db.prepare('SELECT * FROM projects ORDER BY sort,title').all().map(p=>({...p,featured:!!p.featured}));
