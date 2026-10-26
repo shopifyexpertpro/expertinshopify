@@ -26,6 +26,13 @@ const clientUploadsEnabled = process.env.ENABLE_CLIENT_UPLOADS === 'true' && pro
 fs.mkdirSync(dataDir, { recursive: true });
 fs.mkdirSync(uploadsDir, { recursive: true });
 fs.mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+// On Linux hosts the data folder must sit on a mounted disk; inside a container's own filesystem it is wiped on every restart.
+const storagePersistent = (() => {
+  if (process.platform !== 'linux') return true;
+  try { return fs.readFileSync('/proc/mounts','utf8').split('\n').map(line=>line.split(' ')[1]).some(m=>m && m!=='/' && (dataDir===m || dataDir.startsWith(m+'/'))); }
+  catch { return true; }
+})();
+if (!storagePersistent) console.warn('WARNING: '+dataDir+' is not on a persistent disk. Database changes and uploads will be lost on restart. Attach a disk mounted at '+dataDir+'.');
 const db = new DatabaseSync(path.join(dataDir, 'data.sqlite'));
 db.exec(`PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -624,7 +631,7 @@ const server=http.createServer(async(req,res)=>{
           res.setHeader('Set-Cookie',`studio_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0${SECURE?'; Secure':''}`);
           return json(res,200,{ok:true,message:'Password changed. Please sign in again.'});
         }
-        if(method==='GET'&&pathname==='/api/admin/data')return json(res,200,{notificationsConfigured:!!(process.env.RESEND_API_KEY&&process.env.MAIL_FROM),...publicData(),site:getSetting('site'),services:selectServices(),products:db.prepare('SELECT * FROM products ORDER BY sort,title').all(),coupons:db.prepare('SELECT * FROM coupons ORDER BY rowid DESC').all().map(c=>({...c,uses:activeCouponUses(c.code)})),payment:getSetting('payment'),orders:db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 500').all(),inquiries:db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC LIMIT 500').all(),clients:db.prepare('SELECT id,name,email,created_at FROM clients ORDER BY created_at DESC LIMIT 500').all(),conversations:conversationsList(true)});
+        if(method==='GET'&&pathname==='/api/admin/data')return json(res,200,{storagePersistent,notificationsConfigured:!!(process.env.RESEND_API_KEY&&process.env.MAIL_FROM),...publicData(),site:getSetting('site'),services:selectServices(),products:db.prepare('SELECT * FROM products ORDER BY sort,title').all(),coupons:db.prepare('SELECT * FROM coupons ORDER BY rowid DESC').all().map(c=>({...c,uses:activeCouponUses(c.code)})),payment:getSetting('payment'),orders:db.prepare('SELECT * FROM orders ORDER BY created_at DESC LIMIT 500').all(),inquiries:db.prepare('SELECT * FROM inquiries ORDER BY created_at DESC LIMIT 500').all(),clients:db.prepare('SELECT id,name,email,created_at FROM clients ORDER BY created_at DESC LIMIT 500').all(),conversations:conversationsList(true)});
         if(method==='PUT'&&pathname==='/api/admin/site'){
           const b=await parseBody(req);const old=getSetting('site');const updated={...old};
           for(const key of Object.keys(settingsDefault)) if(key in b){
